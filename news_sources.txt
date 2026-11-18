@@ -1,0 +1,11 @@
+https://news.google.com/rss/search?q=US+Top+News&hl=en-US&gl=US&ceid=US:en
+
+https://news.google.com/rss/search?q=USA+Politics&hl=en-US&gl=US&ceid=US:en
+
+https://news.google.com/rss/search?q=USA+Technology&hl=en-US&gl=US&ceid=US:en
+
+https://news.google.com/rss/search?q=USA+Business&hl=en-US&gl=US&ceid=US:en
+
+https://news.google.com/rss/search?q=USA+Entertainment&hl=en-US&gl=US&ceid=US:en
+
+https://news.google.com/rss/search?q=USA+Sports&hl=en-US&gl=US&ceid=US:en
