@@ -5,16 +5,16 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 
-# Environment Variables (GitHub Secrets থেকে আসবে)
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-PEXELS_API_KEY = os.environ["PEXELS_API_KEY"]
-BLOGGER_BLOG_ID = os.environ["BLOGGER_BLOG_ID"]
-BLOGGER_CLIENT_ID = os.environ["BLOGGER_CLIENT_ID"]
-BLOGGER_CLIENT_SECRET = os.environ["BLOGGER_CLIENT_SECRET"]
-BLOGGER_REFRESH_TOKEN = os.environ["BLOGGER_REFRESH_TOKEN"]
+# Environment Variables (.strip() দেওয়ায় বাড়তি স্পেস/এন্টার অটোমেটিক পরিষ্কার হবে)
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
+PEXELS_API_KEY = os.environ["PEXELS_API_KEY"].strip()
+BLOGGER_BLOG_ID = os.environ["BLOGGER_BLOG_ID"].strip()
+BLOGGER_CLIENT_ID = os.environ["BLOGGER_CLIENT_ID"].strip()
+BLOGGER_CLIENT_SECRET = os.environ["BLOGGER_CLIENT_SECRET"].strip()
+BLOGGER_REFRESH_TOKEN = os.environ["BLOGGER_REFRESH_TOKEN"].strip()
 
 # প্রথমে Draft হিসেবে সেভ হবে। সরাসরি পাবলিশ করতে চাইলে "false" করে দেবেন।
-IS_DRAFT = os.environ.get("IS_DRAFT", "true").lower() == "true"
+IS_DRAFT = os.environ.get("IS_DRAFT", "true").strip().lower() == "true"
 
 HISTORY_FILE = "posted_history.json"
 
@@ -73,17 +73,21 @@ def get_candidate_gemini_models():
         for m in models
         if "generateContent" in m.get("supportedGenerationMethods", [])
         and "gemini" in m["name"].lower()
-        and not any(x in m["name"].lower() for x in ["embedding", "tts", "image", "audio", "robotics", "thinking"])
+        and not any(x in m["name"].lower() for x in ["embedding", "tts", "image", "audio", "robotics", "thinking", "omni"])
     ]
-    print("লভ্য Gemini মডেলসমূহ:", valid_models)
 
+    # দ্রুত ও ফ্রি-টিয়ারে নির্ভরযোগ্য মডেলগুলো আগে রাখা হয়েছে
     preferred_first = [
+        "models/gemini-flash-lite-latest",
         "models/gemini-3.8-flash",
+        "models/gemini-3.7-flash",
+        "models/gemini-3.6-flash",
+        "models/gemini-3.5-flash",
+        "models/gemini-2.5-flash-lite",
+        "models/gemini-3.1-flash-lite",
         "models/gemini-flash-latest",
-        "models/gemini-pro-latest",
     ]
 
-    # নতুন ভার্সনগুলো আগে রাখার জন্য রিভার্স সর্ট
     flash_models = sorted(
         [m for m in valid_models if "flash" in m.lower() and m not in preferred_first],
         reverse=True,
@@ -94,8 +98,6 @@ def get_candidate_gemini_models():
     )
 
     ordered = [m for m in preferred_first if m in valid_models] + flash_models + other_models
-    if "models/gemini-3.8-flash" not in ordered:
-        ordered.insert(0, "models/gemini-3.8-flash")
     return ordered
 
 
@@ -140,18 +142,23 @@ Return ONLY valid JSON with these exact keys:
     for model_name in candidates:
         print(f"চেষ্টা করা হচ্ছে: {model_name}")
         url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={GEMINI_API_KEY}"
-        res = requests.post(url, json=payload, timeout=60)
-        if res.ok:
-            print(f"সফল মডেল: {model_name}")
-            raw_text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-            raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
-            raw_text = re.sub(r"\s*```$", "", raw_text)
-            return json.loads(raw_text)
-        else:
-            print(f"{model_name} ব্যর্থ ({res.status_code}): {res.text}")
-            last_error = res
+        try:
+            res = requests.post(url, json=payload, timeout=35)
+            if res.ok:
+                print(f"সফল মডেল: {model_name}")
+                raw_text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+                raw_text = re.sub(r"\s*```$", "", raw_text)
+                return json.loads(raw_text)
+            else:
+                print(f"{model_name} ব্যর্থ ({res.status_code}): {res.text}")
+                last_error = res
+        except requests.exceptions.RequestException as e:
+            print(f"{model_name} টাইমআউট বা নেটওয়ার্ক সমস্যা: {e}")
 
-    last_error.raise_for_status()
+    if last_error is not None:
+        last_error.raise_for_status()
+    raise RuntimeError("কোনো Gemini মডেল থেকেই রেসপন্স পাওয়া যায়নি।")
 
 
 def fetch_pexels_images(queries, count=3):
