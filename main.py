@@ -34,7 +34,6 @@ def load_history():
 
 
 def save_history(history):
-    # সর্বশেষ ৩০০টি লিংক মনে রাখবে
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history[-300:], f, indent=2)
 
@@ -61,8 +60,51 @@ def fetch_latest_news(history):
     return None
 
 
+def get_available_gemini_model():
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
+    res = requests.get(url, timeout=30)
+    if not res.ok:
+        print("Gemini ListModels Error:", res.text)
+        res.raise_for_status()
+
+    models = res.json().get("models", [])
+    valid_models = [
+        m["name"]
+        for m in models
+        if "generateContent" in m.get("supportedGenerationMethods", [])
+        and "gemini" in m["name"].lower()
+        and not any(x in m["name"].lower() for x in ["embedding", "tts", "image", "audio", "robotics", "thinking"])
+    ]
+
+    preferred_order = [
+        "models/gemini-2.5-flash",
+        "models/gemini-2.0-flash",
+        "models/gemini-flash-latest",
+        "models/gemini-1.5-flash",
+        "models/gemini-1.5-flash-latest",
+        "models/gemini-2.5-pro",
+        "models/gemini-1.5-pro",
+    ]
+
+    for pref in preferred_order:
+        if pref in valid_models:
+            return pref
+
+    for name in valid_models:
+        if "flash" in name.lower():
+            return name
+
+    if valid_models:
+        return valid_models[0]
+
+    raise RuntimeError(f"কোনো উপযুক্ত Gemini মডেল পাওয়া যায়নি। লভ্য মডেল: {[m['name'] for m in models]}")
+
+
 def generate_article_with_gemini(news):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    model_name = get_available_gemini_model()
+    print(f"ব্যবহৃত Gemini মডেল: {model_name}")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={GEMINI_API_KEY}"
 
     prompt = f"""
 You are an experienced US news journalist and SEO content editor.
@@ -99,8 +141,13 @@ Return ONLY valid JSON with these exact keys:
     }
 
     res = requests.post(url, json=payload, timeout=60)
-    res.raise_for_status()
-    raw_text = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+    if not res.ok:
+        print("Gemini API Error:", res.text)
+        res.raise_for_status()
+
+    raw_text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+    raw_text = re.sub(r"\s*```$", "", raw_text)
     return json.loads(raw_text)
 
 
@@ -159,7 +206,9 @@ def get_blogger_access_token():
         },
         timeout=30,
     )
-    res.raise_for_status()
+    if not res.ok:
+        print("Blogger OAuth Error:", res.text)
+        res.raise_for_status()
     return res.json()["access_token"]
 
 
@@ -178,7 +227,9 @@ def post_to_blogger(access_token, title, html_content, labels):
     }
 
     res = requests.post(url, headers=headers, params=params, json=payload, timeout=30)
-    res.raise_for_status()
+    if not res.ok:
+        print("Blogger Post Error:", res.text)
+        res.raise_for_status()
     return res.json()
 
 
