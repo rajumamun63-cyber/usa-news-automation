@@ -2,9 +2,9 @@ name: Auto Publish USA News to Blogger
 
 on:
   schedule:
-    # প্রতি ৬ ঘণ্টা পর পর (দিনে ৪ বার) চলবে
-    - cron: "0 */6 * * *"
-  workflow_dispatch: # ম্যানুয়ালি টেস্ট করার বাটন
+    # বাংলাদেশ সময় (UTC+6): সকাল ৬টা, দুপুর ১২টা ও বিকেল ৫টা
+    - cron: "0 0,6,11 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -33,7 +33,7 @@ jobs:
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-          IS_DRAFT: "true"
+          IS_DRAFT: "false"
         run: python main.py
 
       - name: Save Posted History
