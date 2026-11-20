@@ -60,7 +60,7 @@ def fetch_latest_news(history):
     return None
 
 
-def get_available_gemini_model():
+def get_candidate_gemini_models():
     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
     res = requests.get(url, timeout=30)
     if not res.ok:
@@ -75,37 +75,31 @@ def get_available_gemini_model():
         and "gemini" in m["name"].lower()
         and not any(x in m["name"].lower() for x in ["embedding", "tts", "image", "audio", "robotics", "thinking"])
     ]
+    print("লভ্য Gemini মডেলসমূহ:", valid_models)
 
-    preferred_order = [
-        "models/gemini-2.5-flash",
-        "models/gemini-2.0-flash",
+    preferred_first = [
+        "models/gemini-3.8-flash",
         "models/gemini-flash-latest",
-        "models/gemini-1.5-flash",
-        "models/gemini-1.5-flash-latest",
-        "models/gemini-2.5-pro",
-        "models/gemini-1.5-pro",
+        "models/gemini-pro-latest",
     ]
 
-    for pref in preferred_order:
-        if pref in valid_models:
-            return pref
+    # নতুন ভার্সনগুলো আগে রাখার জন্য রিভার্স সর্ট
+    flash_models = sorted(
+        [m for m in valid_models if "flash" in m.lower() and m not in preferred_first],
+        reverse=True,
+    )
+    other_models = sorted(
+        [m for m in valid_models if m not in preferred_first and m not in flash_models],
+        reverse=True,
+    )
 
-    for name in valid_models:
-        if "flash" in name.lower():
-            return name
-
-    if valid_models:
-        return valid_models[0]
-
-    raise RuntimeError(f"কোনো উপযুক্ত Gemini মডেল পাওয়া যায়নি। লভ্য মডেল: {[m['name'] for m in models]}")
+    ordered = [m for m in preferred_first if m in valid_models] + flash_models + other_models
+    if "models/gemini-3.8-flash" not in ordered:
+        ordered.insert(0, "models/gemini-3.8-flash")
+    return ordered
 
 
 def generate_article_with_gemini(news):
-    model_name = get_available_gemini_model()
-    print(f"ব্যবহৃত Gemini মডেল: {model_name}")
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={GEMINI_API_KEY}"
-
     prompt = f"""
 You are an experienced US news journalist and SEO content editor.
 Based ONLY on the news facts provided below, write an original, engaging, human-sounding news article of 350 to 500 words for a US audience.
@@ -140,15 +134,24 @@ Return ONLY valid JSON with these exact keys:
         },
     }
 
-    res = requests.post(url, json=payload, timeout=60)
-    if not res.ok:
-        print("Gemini API Error:", res.text)
-        res.raise_for_status()
+    candidates = get_candidate_gemini_models()
+    last_error = None
 
-    raw_text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
-    raw_text = re.sub(r"\s*```$", "", raw_text)
-    return json.loads(raw_text)
+    for model_name in candidates:
+        print(f"চেষ্টা করা হচ্ছে: {model_name}")
+        url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={GEMINI_API_KEY}"
+        res = requests.post(url, json=payload, timeout=60)
+        if res.ok:
+            print(f"সফল মডেল: {model_name}")
+            raw_text = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+            raw_text = re.sub(r"\s*```$", "", raw_text)
+            return json.loads(raw_text)
+        else:
+            print(f"{model_name} ব্যর্থ ({res.status_code}): {res.text}")
+            last_error = res
+
+    last_error.raise_for_status()
 
 
 def fetch_pexels_images(queries, count=3):
